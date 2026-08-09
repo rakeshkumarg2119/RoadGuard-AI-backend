@@ -1,0 +1,34 @@
+# ─────────────────────────────────────────────────────────────
+# Road Guard AI — Requirements
+# Python 3.12  |  pip install -r requirements.txt
+# ─────────────────────────────────────────────────────────────
+
+# ── YOLO & Computer Vision ────────────────────────────────────
+ultralytics==8.3.40          # YOLOv8 — local fallback inference
+opencv-python-headless==4.10.0.84  # frame processing (no GUI needed on server)
+numpy==1.26.4                # array ops (1.x — ultralytics not yet 2.x stable)
+
+# ── Roboflow Cloud Inference ──────────────────────────────────
+inference-sdk==0.9.22        # Roboflow serverless API client
+
+# ── FastAPI Backend (Mithun's layer) ─────────────────────────
+fastapi==0.115.5
+uvicorn[standard]==0.32.1    # ASGI server
+python-multipart==0.0.18     # image upload support
+
+# ── MongoDB ───────────────────────────────────────────────────
+motor==3.6.0                 # async MongoDB driver (Python 3.12 compatible)
+pymongo==4.10.1              # sync driver (motor dependency)
+
+# ── Weather ───────────────────────────────────────────────────
+aiohttp==3.11.9              # async HTTP for OpenWeatherMap calls
+
+# ── Utilities ─────────────────────────────────────────────────
+python-dotenv==1.0.1         # load .env (API keys)
+pydantic==2.10.3             # request/response validation (FastAPI uses this)
+Pillow==11.0.0               # image pre-processing before sending to Roboflow
+
+# ── Dev / Testing ─────────────────────────────────────────────
+pytest==8.3.4
+pytest-asyncio==0.24.0       # async test support
+httpx==0.28.0                # FastAPI test client
