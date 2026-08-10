@@ -1,17 +1,17 @@
 """
 Road Guard AI — Pothole Detector
-Two modes:
-  1. ROBOFLOW CLOUD (default) — uses your trained serverless API
-  2. LOCAL YOLO (fallback)    — uses best.pt if available
+LOCAL MODEL ONLY — road_guard_pothole_best.pt (ultralytics YOLO)
 
-Your model output from screenshot:
-  class_id: 1  ("pothole detection")
-  x, y, width, height — center-based format from Roboflow API
+Model classes (verified from .pt):
+  0 = Manhole
+  1 = Pothole   ← only this class is used
+
+Pipeline: frame -> local YOLO -> calibration (px -> metres) -> physics engine
+          -> alert payload (severity + danger flag for Flutter)
 """
 
 import os
 import time
-import base64
 import logging
 import numpy as np
 from pathlib import Path
@@ -28,54 +28,41 @@ from .physics_engine import (
 
 logger = logging.getLogger(__name__)
 
-# ── Your Roboflow config (from screenshot) ────────────────────────────────────
-ROBOFLOW_API_KEY       = os.getenv("ROBOFLOW_API_KEY", "")
-ROBOFLOW_WORKSPACE     = "rakeshkumars-workspace"
-ROBOFLOW_WORKFLOW_ID   = "road-guard-pothole-vroad-guard-pothole-1-yolov8s-t1-logic"
-ROBOFLOW_API_URL       = "https://serverless.roboflow.com"
+# ── Local model config ─────────────────────────────────────────────────────
+MODEL_PATH = Path(__file__).parent.parent / "model" / "road_guard_pothole_best.pt"
+POTHOLE_CLASS_ID = 1        # "Pothole" (class 0 = "Manhole", ignored)
+MIN_CONFIDENCE = 0.25       # matches sample_yolo.py working threshold
 
-# class_id of pothole in YOUR model (from screenshot: class_id = 1)
-POTHOLE_CLASS_ID       = 1
-MIN_CONFIDENCE         = 0.38   # your model's current working confidence
+# Severities that must trigger a Flutter alert regardless of distance gate
+DANGER_SEVERITIES = {"high", "critical"}
 
 
 class PotholeDetector:
     """
-    Full pipeline: image → Roboflow API → calibration → physics → alert payload.
-    Falls back to local YOLOv8n if API key not set.
+    Full pipeline: image -> local YOLO (.pt) -> calibration -> physics -> alert payload.
     """
 
     def __init__(
         self,
-        api_key:            Optional[str] = None,
+        model_path:         Optional[str] = None,
         bike_config:        Optional[BikeConfig] = None,
         camera_calibrator:  Optional[CameraCalibrator] = None,
         min_confidence:     float = MIN_CONFIDENCE,
-        use_cloud:          bool  = True,
     ):
+        from ultralytics import YOLO
+
         self.min_confidence = min_confidence
         self.physics        = PotholePhysicsEngine(bike_config or BikeConfig())
         self.calibrator     = camera_calibrator or CameraCalibrator()
 
-        self.api_key        = api_key or ROBOFLOW_API_KEY
-        self.use_cloud      = use_cloud and bool(self.api_key)
+        path = model_path or str(MODEL_PATH)
+        if not Path(path).exists():
+            raise FileNotFoundError(f"Model not found: {path}")
 
-        if self.use_cloud:
-            from inference_sdk import InferenceHTTPClient
-            self.client = InferenceHTTPClient(
-                api_url=ROBOFLOW_API_URL,
-                api_key=self.api_key,
-            )
-            logger.info("Roboflow Cloud API ready")
-        else:
-            # Local fallback
-            from ultralytics import YOLO
-            local_path = Path(__file__).parent.parent / "models" / "best.pt"
-            model_name = str(local_path) if local_path.exists() else "yolov8n.pt"
-            self.local_model = YOLO(model_name)
-            logger.warning(f"Using local model: {model_name}")
+        self.model = YOLO(path)
+        logger.info(f"Loaded local model: {path} | classes: {self.model.names}")
 
-    # ── Public API ────────────────────────────────────────────────────────────
+    # ── Public API ───────────────────────────────────────────────────────
 
     def process_frame(
         self,
@@ -85,8 +72,8 @@ class PotholeDetector:
         gps_coords:     Optional[tuple] = None,
     ) -> list[dict]:
         """
-        Process one video frame (BGR numpy array from cv2).
-        Returns list of detection+physics payloads ready for MongoDB.
+        Process one frame (BGR numpy array from cv2).
+        Returns list of detection+physics+alert payloads, one per pothole found.
         """
         t_start = time.perf_counter()
 
@@ -94,20 +81,18 @@ class PotholeDetector:
         self.calibrator.img_w = img_w
         self.calibrator.img_h = img_h
 
-        if self.use_cloud:
-            raw_predictions = self._infer_cloud(frame)
-        else:
-            raw_predictions = self._infer_local(frame)
+        raw_predictions = self._infer(frame)
 
         detections = []
         for pred in raw_predictions:
-            conf = pred.get("confidence", 0)
-            if conf < self.min_confidence:
+            if pred["class_id"] != POTHOLE_CLASS_ID:
+                continue
+            if pred["confidence"] < self.min_confidence:
                 continue
 
-            bbox = self._to_bbox(pred, img_w, img_h)
+            bbox = self._to_bbox(pred)
             detection = self._build_detection(
-                bbox, conf, speed_kmh, road_condition,
+                bbox, pred["confidence"], speed_kmh, road_condition,
                 gps_coords, t_start,
             )
             detections.append(detection)
@@ -128,75 +113,30 @@ class PotholeDetector:
             raise FileNotFoundError(f"Cannot read: {image_path}")
         return self.process_frame(frame, speed_kmh, road_condition, gps_coords)
 
-    # ── Inference backends ────────────────────────────────────────────────────
+    # ── Inference ────────────────────────────────────────────────────────
 
-    def _infer_cloud(self, frame: np.ndarray) -> list[dict]:
-        """
-        Call Roboflow Serverless API.
-        Roboflow returns predictions in center-based xywh format.
-        """
-        import cv2
-        try:
-            # Encode frame as JPEG bytes → base64
-            _, buf   = cv2.imencode(".jpg", frame)
-            b64_img  = base64.b64encode(buf.tobytes()).decode("utf-8")
-
-            result = self.client.run_workflow(
-                workspace_name=ROBOFLOW_WORKSPACE,
-                workflow_id=ROBOFLOW_WORKFLOW_ID,
-                images={"image": b64_img},
-                use_cache=True,
-            )
-
-            # Roboflow workflow result structure:
-            # result[0]["predictions"]["predictions"] → list of prediction dicts
-            preds = (
-                result[0]
-                .get("predictions", {})
-                .get("predictions", [])
-            )
-            # Filter to pothole class only (class_id = 1 in your model)
-            return [p for p in preds if p.get("class_id") == POTHOLE_CLASS_ID]
-
-        except Exception as e:
-            logger.error(f"Roboflow API error: {e}")
-            return []
-
-    def _infer_local(self, frame: np.ndarray) -> list[dict]:
-        """Local YOLO fallback — converts ultralytics output to same dict format."""
-        results = self.local_model(frame, verbose=False, conf=self.min_confidence)
-        preds   = []
+    def _infer(self, frame: np.ndarray) -> list[dict]:
+        """Runs local .pt model, returns flat prediction dicts."""
+        results = self.model(frame, verbose=False, conf=self.min_confidence)
+        preds = []
         for r in results:
             if r.boxes is None:
                 continue
             for box in r.boxes:
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
-                w  = x2 - x1
-                h  = y2 - y1
                 preds.append({
-                    "x":          x1 + w / 2,   # center x
-                    "y":          y1 + h / 2,   # center y
-                    "width":      w,
-                    "height":     h,
+                    "x1": x1, "y1": y1, "x2": x2, "y2": y2,
                     "confidence": float(box.conf[0]),
                     "class_id":   int(box.cls[0]),
                 })
         return preds
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
+    # ── Helpers ──────────────────────────────────────────────────────────
 
-    def _to_bbox(self, pred: dict, img_w: int, img_h: int) -> BoundingBox:
-        """
-        Roboflow predictions are center-based (x, y = centre of box).
-        Convert to corner-based for our calibrator.
-        """
-        cx = pred["x"];     w = pred["width"]
-        cy = pred["y"];     h = pred["height"]
+    def _to_bbox(self, pred: dict) -> BoundingBox:
         return BoundingBox(
-            x1=cx - w / 2,
-            y1=cy - h / 2,
-            x2=cx + w / 2,
-            y2=cy + h / 2,
+            x1=pred["x1"], y1=pred["y1"],
+            x2=pred["x2"], y2=pred["y2"],
             confidence=pred["confidence"],
         )
 
@@ -209,7 +149,7 @@ class PotholeDetector:
         gps_coords:     Optional[tuple],
         t_start:        float,
     ) -> dict:
-        """Calibrate → physics → assemble MongoDB payload."""
+        """Calibrate -> physics -> assemble MongoDB payload."""
         width_m, depth_m, distance_m = self.calibrator.bbox_to_real_world(bbox)
 
         pothole = PotholeGeometry(
@@ -233,7 +173,7 @@ class PotholeDetector:
                                round(bbox.x2), round(bbox.y2)],
                 "confidence": round(conf, 3),
                 "distance_m": round(distance_m, 2),
-                "source":     "roboflow_cloud" if self.use_cloud else "local_yolo",
+                "source":     "local_yolo_pt",
             },
             "physics":      physics_result.to_dict(),
             "alert":        self._build_alert(physics_result, distance_m),
@@ -248,8 +188,15 @@ class PotholeDetector:
             "critical": {"color": "#B71C1C", "vibration": "continuous", "sound": "siren"},
         }[result.severity]
 
+        # trigger: rider is inside (or past) the calculated braking+reaction window
+        within_alert_window = distance_m <= result.d_alert_m * 1.2
+        # danger: always push to Flutter for high/critical severity, even outside window,
+        # so the app can pre-warn / log it even if the rider is currently far off
+        is_danger = result.severity in DANGER_SEVERITIES
+
         return {
-            "trigger":          distance_m <= result.d_alert_m * 1.2,
+            "trigger":          within_alert_window or is_danger,
+            "danger":           is_danger,
             "severity":         result.severity,
             "color_hex":        cfg["color"],
             "vibration_type":   cfg["vibration"],
