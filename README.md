@@ -22,6 +22,8 @@ backend/
 │   ├── physics_engine.py       # kinematic formula: d_alert = d_stop + d_react
 │   ├── camera_calibration.py   # converts YOLO bbox pixels → real-world metres
 │   └── pothole_detector.py     # Roboflow cloud API → calibration → physics pipeline
+├── model/
+│   ├── road_guard_pothole_best.pt #Yolo V8 AI used to detect the pothole 
 ├── services/
 │   ├── weather_service.py      # OpenWeatherMap poll every 30 min → μ dry/wet/gravel
 │   └── simulation_store.py     # pre-computes speed table (10–100 km/h), MongoDB save/query
@@ -88,7 +90,6 @@ python -m pytest tests/test_pipeline.py -v
 ## Keys needed in .env
 
 ```env
-ROBOFLOW_API_KEY=        # roboflow.com → avatar → API Keys
 OPENWEATHER_API_KEY=     # openweathermap.org → API Keys (free tier)
 MONGODB_URI=             # MongoDB Atlas connection string
 DEFAULT_LAT=9.9252       # Madurai — change to your test location
