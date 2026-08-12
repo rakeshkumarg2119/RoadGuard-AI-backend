@@ -2,14 +2,29 @@ numpy>=2.1,<2.3
 opencv-python==4.10.0.84
 ultralytics==8.3.40
 
-fastapi==0.115.6
+# ── YOLO & Computer Vision ────────────────────────────────────
+ultralytics==8.3.40
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+
+# ── FastAPI Backend ───────────────────────────────────────────
+fastapi==0.115.5
 uvicorn[standard]==0.32.1
 python-multipart==0.0.18
 
-motor==3.6.0
+# ── MongoDB ───────────────────────────────────────────────────
+motor==3.5.0
 pymongo==4.9.2
 
-aiohttp==3.11.11
-python-dotenv==1.0.1
+# ── Weather ───────────────────────────────────────────────────
+aiohttp==3.10.11
 
+# ── Utilities ─────────────────────────────────────────────────
+python-dotenv==1.0.1
+pydantic==2.10.3
+Pillow==10.4.0
+
+# ── Dev / Testing ─────────────────────────────────────────────
 pytest==8.3.4
+pytest-asyncio==0.24.0
+httpx==0.28.0

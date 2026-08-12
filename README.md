@@ -22,6 +22,8 @@ backend/
 │   ├── physics_engine.py       # kinematic formula: d_alert = d_stop + d_react
 │   ├── camera_calibration.py   # converts YOLO bbox pixels → real-world metres
 │   └── pothole_detector.py     # Roboflow cloud API → calibration → physics pipeline
+├── model/
+│   ├── road_guard_pothole_best.pt #Yolo V8 AI used to detect the pothole 
 ├── services/
 │   ├── weather_service.py      # OpenWeatherMap poll every 30 min → μ dry/wet/gravel
 │   └── simulation_store.py     # pre-computes speed table (10–100 km/h), MongoDB save/query
@@ -88,7 +90,6 @@ python -m pytest tests/test_pipeline.py -v
 ## Keys needed in .env
 
 ```env
-ROBOFLOW_API_KEY=        # roboflow.com → avatar → API Keys
 OPENWEATHER_API_KEY=     # openweathermap.org → API Keys (free tier)
 MONGODB_URI=             # MongoDB Atlas connection string
 DEFAULT_LAT=9.9252       # Madurai — change to your test location
@@ -172,16 +173,14 @@ Without this index the `/alert` geo-query will not work.
 
 ---
 
-## Roboflow model details
+## Model details
 
-- Workspace : `rakeshkumars-workspace`
-- Project   : `road-guard-pothole-1`
-- Model     : `yolov8s` trained on pothole dataset
-- Inference : Roboflow Serverless Cloud API (no local GPU needed)
-- Class ID  : `1` (pothole detection)
-- Confidence threshold : `0.38`
+- File       : `model/road_guard_pothole_best.pt`
+- Framework  : Ultralytics YOLO, loaded locally (no cloud API)
+- Classes    : `0 = Manhole`, `1 = Pothole` (only class 1 used)
+- Confidence threshold : `0.25`
 
-No `best.pt` download required. Model runs on Roboflow's servers.
+Inference runs entirely on the local `.pt` file via `core/pothole_detector.py`.
 
 ---
 
@@ -204,10 +203,10 @@ Flutter release APK points to this URL.
 ### Done ✅
 - Physics engine (`d_alert` formula, fall classification, severity bands)
 - Camera calibration (bbox pixels → real-world metres)
-- Roboflow cloud detector (sends image, gets bbox, pipes to physics)
+- Local `.pt` detector (`road_guard_pothole_best.pt` → calibration → physics → alert)
+- Alert payload carries `danger: true` for high/critical severity, for Flutter to trigger sound + flashlight
 - Weather service (OpenWeatherMap, 30-min poll, μ switching)
 - Simulation store (speed table pre-computation, MongoDB save, geo-query, deduplication)
-- 28/28 tests passing
 
 ### Pending — Dharunish (tonight) 🔧
 - MongoDB connection setup (motor async client, Atlas URI)
