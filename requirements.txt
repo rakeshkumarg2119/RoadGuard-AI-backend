@@ -1,7 +1,6 @@
-# ─────────────────────────────────────────────────────────────
-# Road Guard AI — Requirements
-# Python 3.12  |  pip install -r requirements.txt
-# ─────────────────────────────────────────────────────────────
+numpy>=2.1,<2.3
+opencv-python==4.10.0.84
+ultralytics==8.3.40
 
 # ── YOLO & Computer Vision ────────────────────────────────────
 ultralytics==8.3.40

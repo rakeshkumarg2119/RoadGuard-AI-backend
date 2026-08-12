@@ -23,7 +23,7 @@ import aiohttp
 from dataclasses import dataclass, field
 from typing import Optional
 
-from ..core.physics_engine import RoadCondition
+from core.physics_engine import RoadCondition
 
 logger = logging.getLogger(__name__)
 
