@@ -1,8 +1,8 @@
 """
 Road Guard AI — Pothole Detector
-Two modes:
-  1. ROBOFLOW CLOUD (default) — uses your trained serverless API
-  2. LOCAL YOLO (fallback)    — uses best.pt if available
+Local-only mode:
+  Uses local YOLO weights (best.pt if available, else yolov8n.pt fallback).
+  Roboflow cloud code is kept below but disabled by default (use_cloud=False).
 
 Your model output from screenshot:
   class_id: 1  ("pothole detection")
@@ -41,8 +41,8 @@ MIN_CONFIDENCE         = 0.38   # your model's current working confidence
 
 class PotholeDetector:
     """
-    Full pipeline: image → Roboflow API → calibration → physics → alert payload.
-    Falls back to local YOLOv8n if API key not set.
+    Full pipeline: image → local YOLO → calibration → physics → alert payload.
+    Cloud (Roboflow) is available but disabled unless use_cloud=True is passed explicitly.
     """
 
     def __init__(
@@ -51,14 +51,14 @@ class PotholeDetector:
         bike_config:        Optional[BikeConfig] = None,
         camera_calibrator:  Optional[CameraCalibrator] = None,
         min_confidence:     float = MIN_CONFIDENCE,
-        use_cloud:          bool  = True,
+        use_cloud:          bool  = False,
     ):
         self.min_confidence = min_confidence
         self.physics        = PotholePhysicsEngine(bike_config or BikeConfig())
         self.calibrator     = camera_calibrator or CameraCalibrator()
 
         self.api_key        = api_key or ROBOFLOW_API_KEY
-        self.use_cloud      = use_cloud and bool(self.api_key)
+        self.use_cloud       = use_cloud and bool(self.api_key)
 
         if self.use_cloud:
             from inference_sdk import InferenceHTTPClient
@@ -68,10 +68,16 @@ class PotholeDetector:
             )
             logger.info("Roboflow Cloud API ready")
         else:
-            # Local fallback
+            # Local-only mode
             from ultralytics import YOLO
-            local_path = Path(__file__).parent.parent / "models" / "best.pt"
-            model_name = str(local_path) if local_path.exists() else "yolov8n.pt"
+            backend_root = Path(__file__).parent.parent
+            candidates = [
+                backend_root / "models" / "best.pt",
+                backend_root / "best.pt",
+                backend_root / "yolov8n.pt",
+            ]
+            model_path = next((p for p in candidates if p.exists()), None)
+            model_name = str(model_path) if model_path else "yolov8n.pt"
             self.local_model = YOLO(model_name)
             logger.warning(f"Using local model: {model_name}")
 

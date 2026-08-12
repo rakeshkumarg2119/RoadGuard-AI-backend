@@ -10,6 +10,10 @@ SimulationStore
 WeatherService
    ↓
 Background weather polling
+
+PotholeDetector
+   ↓
+Roboflow / local YOLO inference
 """
 
 import os
@@ -24,6 +28,7 @@ from core.db import (
 
 from services.simulation_store import SimulationStore
 from services.weather_service import WeatherService
+from core.pothole_detector import PotholeDetector
 
 
 logger = logging.getLogger("roadguard.app_state")
@@ -31,6 +36,7 @@ logger = logging.getLogger("roadguard.app_state")
 
 _store: Optional[SimulationStore] = None
 _weather: Optional[WeatherService] = None
+_detector: Optional[PotholeDetector] = None
 
 
 async def connect_all() -> None:
@@ -42,6 +48,7 @@ async def connect_all() -> None:
 
     global _store
     global _weather
+    global _detector
 
     logger.info("Starting RoadGuard backend services...")
 
@@ -90,6 +97,14 @@ async def connect_all() -> None:
         lon,
     )
 
+    # ---------------------------------------------------------
+    # Pothole Detector
+    # ---------------------------------------------------------
+
+    _detector = PotholeDetector()
+
+    logger.info("PotholeDetector initialized.")
+
     logger.info(
         "All RoadGuard backend services started."
     )
@@ -102,6 +117,7 @@ async def disconnect_all() -> None:
 
     global _store
     global _weather
+    global _detector
 
     logger.info(
         "Stopping RoadGuard backend services..."
@@ -123,6 +139,12 @@ async def disconnect_all() -> None:
             )
 
         _weather = None
+
+    # ---------------------------------------------------------
+    # Pothole Detector
+    # ---------------------------------------------------------
+
+    _detector = None
 
     # ---------------------------------------------------------
     # MongoDB
@@ -170,3 +192,17 @@ def get_weather() -> WeatherService:
         )
 
     return _weather
+
+
+def get_detector() -> PotholeDetector:
+    """
+    Return the active PotholeDetector.
+    """
+
+    if _detector is None:
+        raise RuntimeError(
+            "PotholeDetector is not initialized. "
+            "Call connect_all() during application startup."
+        )
+
+    return _detector
