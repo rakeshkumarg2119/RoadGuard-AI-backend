@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RoadGuard Ops</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><rect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%230E1012%22/><path d=%22M16 5 L27 25 L5 25 Z%22 fill=%22none%22 stroke=%22%23FFC53D%22 stroke-width=%222.5%22 stroke-linejoin=%22round%22/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0E1012;
+    --panel:#17191D;
+    --panel-raised:#1D2024;
+    --line:#262A2F;
+    --text:#E7E4DC;
+    --text-dim:#868C93;
+    --yellow:#FFC53D;
+    --green:#3ED598;
+    --red:#FF5C5C;
+    --blue:#57A6FF;
+    --other:#9AA0A6;
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(255,197,61,0.05), transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .board{
+    max-width:920px;
+    margin:0 auto;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    border-left:1px solid var(--line);
+    border-right:1px solid var(--line);
+  }
+
+  /* ── Overhead sign bar ─────────────────────────────── */
+  .signboard{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:22px 28px;
+    background:
+      linear-gradient(180deg, var(--panel-raised), var(--panel));
+    border-bottom:1px solid var(--line);
+    position:sticky;
+    top:0;
+    z-index:10;
+  }
+  .signboard__title{
+    font-family:'Oswald', sans-serif;
+    font-weight:600;
+    font-size:22px;
+    letter-spacing:0.08em;
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .signboard__icon{ color:var(--yellow); font-size:16px; transform:translateY(-1px); }
+  .signboard__sub{ color:var(--text-dim); font-weight:500; }
+
+  .signboard__status{ display:flex; align-items:center; gap:14px; }
+  .status-pill{
+    display:flex; align-items:center; gap:8px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    letter-spacing:0.06em;
+    padding:6px 12px;
+    border-radius:20px;
+    border:1px solid var(--line);
+    background:rgba(255,255,255,0.02);
+  }
+  .status-pill.is-live{ color:var(--green); border-color:rgba(62,213,152,0.3); }
+  .status-pill.is-down{ color:var(--red); border-color:rgba(255,92,92,0.3); }
+  .pulse-dot{
+    width:8px; height:8px; border-radius:50%;
+    background:currentColor;
+    box-shadow:0 0 0 0 currentColor;
+    animation:pulse 1.8s ease-out infinite;
+  }
+  @keyframes pulse{
+    0%{ box-shadow:0 0 0 0 rgba(62,213,152,0.5); }
+    70%{ box-shadow:0 0 0 8px rgba(62,213,152,0); }
+    100%{ box-shadow:0 0 0 0 rgba(62,213,152,0); }
+  }
+  .viewers{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    color:var(--text-dim);
+  }
+
+  /* ── Mile-marker filter strip ──────────────────────── */
+  .mile-strip{
+    display:flex;
+    gap:8px;
+    padding:14px 28px;
+    overflow-x:auto;
+    background:var(--panel);
+    border-bottom:1px solid var(--line);
+    position:sticky;
+    top:65px;
+    z-index:9;
+  }
+  .mile{
+    flex:0 0 auto;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.06em;
+    color:var(--text-dim);
+    background:var(--panel-raised);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:8px 12px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    transition:border-color .15s, color .15s, background .15s;
+  }
+  .mile b{
+    font-family:'IBM Plex Mono', monospace;
+    font-weight:500;
+    color:var(--text);
+    background:rgba(255,255,255,0.06);
+    padding:1px 6px;
+    border-radius:10px;
+    font-size:11px;
+  }
+  .mile:hover{ border-color:#3a3f45; }
+  .mile:focus-visible{ outline:2px solid var(--yellow); outline-offset:2px; }
+  .mile.active{ color:var(--text); border-color:var(--accent, var(--yellow)); }
+  .mile.active b{ background:var(--accent, var(--yellow)); color:#0E1012; }
+  .mile--detection{ --accent:var(--green); }
+  .mile--alert{ --accent:var(--red); }
+  .mile--simulate{ --accent:var(--blue); }
+  .mile--other{ --accent:var(--other); }
+
+  /* ── Feed ───────────────────────────────────────────── */
+  .feed{
+    flex:1;
+    padding:20px 28px 60px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+
+  .empty{
+    margin-top:60px;
+    text-align:center;
+    color:var(--text-dim);
+    font-size:14px;
+    line-height:1.6;
+    max-width:360px;
+    margin-left:auto;
+    margin-right:auto;
+  }
+
+  .ticket{
+    position:relative;
+    display:flex;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:2px 8px 8px 2px;
+    padding:12px 16px 12px 18px;
+    background-image:repeating-linear-gradient(
+      to right, var(--line) 0 6px, transparent 6px 12px
+    );
+    background-size:100% 1px;
+    background-position:top;
+    background-repeat:no-repeat;
+    overflow:hidden;
+  }
+  .ticket__bar{
+    position:absolute;
+    left:0; top:0; bottom:0;
+    width:4px;
+    background:var(--other);
+  }
+  .ticket--detection .ticket__bar{ background:var(--green); }
+  .ticket--alert .ticket__bar{ background:var(--red); }
+  .ticket--simulate .ticket__bar{ background:var(--blue); }
+
+  .ticket.is-new{ animation:drop-in .4s ease-out; }
+  @keyframes drop-in{
+    from{ transform:translateY(-8px); opacity:0; background-color:rgba(255,197,61,0.08); }
+    to{ transform:translateY(0); opacity:1; background-color:transparent; }
+  }
+
+  .ticket__body{ flex:1; min-width:0; }
+  .ticket__row1{
+    display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+  }
+  .ticket__method{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px; font-weight:500;
+    color:var(--yellow);
+    letter-spacing:0.04em;
+  }
+  .ticket__path{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    color:var(--text);
+    word-break:break-all;
+  }
+  .ticket__status{
+    margin-left:auto;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    padding:1px 7px;
+    border-radius:10px;
+    background:rgba(255,255,255,0.06);
+    color:var(--text-dim);
+  }
+  .ticket__status--ok{ color:var(--green); }
+  .ticket__status--warn{ color:var(--yellow); }
+  .ticket__status--err{ color:var(--red); }
+
+  .ticket__row2{
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    margin-top:6px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--text-dim);
+  }
+  .ticket__stamp{
+    font-family:'Oswald', sans-serif;
+    font-size:10px;
+    letter-spacing:0.1em;
+    padding:2px 7px;
+    border:1px solid currentColor;
+    border-radius:3px;
+    transform:rotate(-2deg);
+    display:inline-block;
+  }
+  .ticket--detection .ticket__stamp{ color:var(--green); }
+  .ticket--alert .ticket__stamp{ color:var(--red); }
+  .ticket--simulate .ticket__stamp{ color:var(--blue); }
+  .ticket--other .ticket__stamp{ color:var(--other); }
+
+  @media (max-width:560px){
+    .signboard{ padding:16px 18px; }
+    .signboard__title{ font-size:18px; }
+    .viewers{ display:none; }
+    .mile-strip{ padding:12px 18px; top:58px; }
+    .feed{ padding:16px 14px 50px; }
+    .ticket__status{ margin-left:0; order:3; width:100%; }
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    .pulse-dot, .ticket.is-new{ animation:none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="board">
+  <header class="signboard">
+    <div class="signboard__title">
+      <span class="signboard__icon">▲</span>ROADGUARD <span class="signboard__sub">OPS</span>
+    </div>
+    <div class="signboard__status">
+      <div class="status-pill is-live" id="statusPill">
+        <span class="pulse-dot" id="statusDot"></span>
+        <span id="statusText">CONNECTING</span>
+      </div>
+      <span class="viewers" id="viewers"></span>
+    </div>
+  </header>
+
+  <nav class="mile-strip" id="filterStrip">
+    <button class="mile active" data-filter="all">ALL <b id="count-all">0</b></button>
+    <button class="mile mile--detection" data-filter="detection">DETECTION <b id="count-detection">0</b></button>
+    <button class="mile mile--alert" data-filter="alert">ALERT <b id="count-alert">0</b></button>
+    <button class="mile mile--simulate" data-filter="simulate">SIMULATE <b id="count-simulate">0</b></button>
+    <button class="mile mile--other" data-filter="other">SYSTEM <b id="count-other">0</b></button>
+  </nav>
+
+  <main class="feed" id="feed">
+    <div class="empty" id="emptyState">Feed's quiet. Fire off a request — from you or your teammate — and it lands here.</div>
+  </main>
+</div>
+
+<script>
+  const feedEl = document.getElementById('feed');
+  const emptyState = document.getElementById('emptyState');
+  const statusPill = document.getElementById('statusPill');
+  const statusText = document.getElementById('statusText');
+  const viewersEl = document.getElementById('viewers');
+  const filterStrip = document.getElementById('filterStrip');
+  const countEls = {
+    all: document.getElementById('count-all'),
+    detection: document.getElementById('count-detection'),
+    alert: document.getElementById('count-alert'),
+    simulate: document.getElementById('count-simulate'),
+    other: document.getElementById('count-other'),
+  };
+
+  const MAX_DOM_TICKETS = 150;
+  let currentFilter = 'all';
+  let ticketCount = 0;
+
+  filterStrip.addEventListener('click', (e) => {
+    const btn = e.target.closest('.mile');
+    if (!btn) return;
+    filterStrip.querySelectorAll('.mile').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.filter;
+    applyFilter();
+  });
+
+  function applyFilter(){
+    feedEl.querySelectorAll('.ticket').forEach(t => {
+      const show = currentFilter === 'all' || t.dataset.category === currentFilter;
+      t.style.display = show ? '' : 'none';
+    });
+  }
+
+  function statusClass(status){
+    if (status >= 500) return 'ticket__status--err';
+    if (status >= 400) return 'ticket__status--warn';
+    return 'ticket__status--ok';
+  }
+
+  function formatTime(iso){
+    const d = new Date(iso);
+    const pad = (n, l=2) => String(n).padStart(l, '0');
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(),3)}`;
+  }
+
+  function renderTicket(event, { animate }){
+    emptyState.style.display = 'none';
+    const cat = event.category || 'other';
+    const el = document.createElement('article');
+    el.className = `ticket ticket--${cat}` + (animate ? ' is-new' : '');
+    el.dataset.category = cat;
+    el.innerHTML = `
+      <div class="ticket__bar"></div>
+      <div class="ticket__body">
+        <div class="ticket__row1">
+          <span class="ticket__method">${event.method}</span>
+          <span class="ticket__path">${event.path}</span>
+          <span class="ticket__status ${statusClass(event.status)}">${event.status}</span>
+        </div>
+        <div class="ticket__row2">
+          <span class="ticket__time">${formatTime(event.time)}</span>
+          <span class="ticket__stamp">${event.category_label || 'SYSTEM'}</span>
+          <span class="ticket__duration">${event.duration_ms}ms</span>
+          <span class="ticket__client">${event.client || ''}</span>
+        </div>
+      </div>
+    `;
+    if (currentFilter !== 'all' && cat !== currentFilter) el.style.display = 'none';
+    feedEl.insertBefore(el, feedEl.firstChild);
+    ticketCount++;
+    if (ticketCount > MAX_DOM_TICKETS){
+      const last = feedEl.lastElementChild;
+      if (last) feedEl.removeChild(last);
+      ticketCount--;
+    }
+  }
+
+  function updateCounts(stats){
+    countEls.all.textContent = stats.total ?? 0;
+    countEls.detection.textContent = stats.detection ?? 0;
+    countEls.alert.textContent = stats.alert ?? 0;
+    countEls.simulate.textContent = stats.simulate ?? 0;
+    countEls.other.textContent = stats.other ?? 0;
+  }
+
+  function setLive(){
+    statusPill.classList.remove('is-down');
+    statusPill.classList.add('is-live');
+    statusText.textContent = 'LIVE';
+  }
+  function setDown(){
+    statusPill.classList.remove('is-live');
+    statusPill.classList.add('is-down');
+    statusText.textContent = 'OFFLINE — RECONNECTING';
+    viewersEl.textContent = '';
+  }
+
+  let socket;
+  function connect(){
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    socket = new WebSocket(`${proto}://${location.host}/ws/live`);
+
+    socket.onopen = () => setLive();
+
+    socket.onmessage = (msg) => {
+      const payload = JSON.parse(msg.data);
+      if (payload.type === 'init'){
+        feedEl.querySelectorAll('.ticket').forEach(t => t.remove());
+        ticketCount = 0;
+        payload.events.slice().reverse().forEach(ev => renderTicket(ev, { animate:false }));
+        updateCounts(payload.stats);
+        setViewers(payload.viewers);
+      } else if (payload.type === 'event'){
+        renderTicket(payload.event, { animate:true });
+        updateCounts(payload.stats);
+      } else if (payload.type === 'viewers'){
+        setViewers(payload.viewers);
+      }
+    };
+
+    socket.onclose = () => {
+      setDown();
+      setTimeout(connect, 2000);
+    };
+    socket.onerror = () => socket.close();
+  }
+
+  function setViewers(n){
+    viewersEl.textContent = n === 1 ? '1 online' : `${n} online`;
+  }
+
+  connect();
+</script>
+</body>
+</html>
