@@ -24,6 +24,7 @@ from core.db import (
     connect_to_mongo,
     close_mongo_connection,
     get_potholes_collection,
+    get_database,                  # NEW — exposes the Motor DB handle
 )
 
 from services.simulation_store import SimulationStore
@@ -206,3 +207,23 @@ def get_detector() -> PotholeDetector:
         )
 
     return _detector
+
+
+def get_db():
+    """
+    Return the live AsyncIOMotorDatabase handle.
+
+    Used by routes/alert_session.py to read/write the
+    'monitoring_sessions' collection without going through
+    SimulationStore (which only owns 'potholes').
+
+    Delegates to core.db.get_database() — the single source
+    of truth for the Motor client — so there is never more
+    than one client instance in the process.
+
+    Raises RuntimeError if called before connect_all().
+    In practice this cannot happen because FastAPI's lifespan
+    calls connect_all() before any route handler runs.
+    """
+
+    return get_database()

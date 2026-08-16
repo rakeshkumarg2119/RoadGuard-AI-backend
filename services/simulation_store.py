@@ -351,6 +351,14 @@ class SimulationStore:
                 simulation["d_alert_m"]
             )
 
+            d_stop_m = float(
+                simulation["d_stop_m"]
+            )
+
+            d_react_m = float(
+                simulation["d_react_m"]
+            )
+
             gps_readable = doc.get(
                 "gps_readable"
             )
@@ -367,9 +375,36 @@ class SimulationStore:
 
             if distance_m <= d_alert_m:
 
-                severity = simulation[
+                base_severity = simulation[
                     "severity"
                 ]
+
+                # ── 3-stage distance zones ───────────────────────
+                # The reaction zone (d_stop_m to d_alert_m, width = d_react_m)
+                # is split in half to give an early vs late warning:
+                #
+                #   STAGE 1  d_stop_m + 0.5*d_react_m < dist <= d_alert_m
+                #            far away, plenty of room  → sound only
+                #   STAGE 2  d_stop_m < dist <= d_stop_m + 0.5*d_react_m
+                #            getting close              → sound+flash+vibration
+                #   STAGE 3  dist <= d_stop_m
+                #            inside braking distance     → siren+flash+vibration
+                stage2_boundary = d_stop_m + (0.5 * d_react_m)
+
+                if distance_m <= d_stop_m:
+                    zone = "stage3"
+                    severity = self._upgrade_severity(base_severity, steps=1)
+                elif distance_m <= stage2_boundary:
+                    zone = "stage2"
+                    severity = base_severity
+                else:
+                    zone = "stage1"
+                    severity = base_severity
+
+                logger.info(
+                    "ALERT zone=%s distance=%.1fm d_stop=%.1fm d_alert=%.1fm speed_band=%s",
+                    zone, distance_m, d_stop_m, d_alert_m, band,
+                )
 
                 return {
 
@@ -387,6 +422,15 @@ class SimulationStore:
                             d_alert_m,
                             1,
                         ),
+
+                    "d_stop_m":
+                        round(
+                            d_stop_m,
+                            1,
+                        ),
+
+                    "zone":
+                        zone,
 
                     "severity":
                         severity,
@@ -599,6 +643,26 @@ class SimulationStore:
                 math.sqrt(1 - a),
             )
         )
+
+    # ========================================================
+    # SEVERITY UPGRADE (used by zone staging)
+    # ========================================================
+
+    _SEVERITY_ORDER = ["low", "medium", "high", "critical"]
+
+    @classmethod
+    def _upgrade_severity(
+        cls,
+        base: str,
+        steps: int,
+    ) -> str:
+        try:
+            idx = cls._SEVERITY_ORDER.index(base)
+        except ValueError:
+            return base
+        return cls._SEVERITY_ORDER[
+            min(idx + steps, len(cls._SEVERITY_ORDER) - 1)
+        ]
 
     # ========================================================
     # SPEED BAND

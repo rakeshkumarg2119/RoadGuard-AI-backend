@@ -248,6 +248,13 @@
   .ticket--simulate .ticket__stamp{ color:var(--blue); }
   .ticket--other .ticket__stamp{ color:var(--other); }
 
+  .ticket__stage{
+    font-family:'IBM Plex Mono', monospace;
+    font-weight:600;
+    color:var(--yellow);
+    text-transform:uppercase;
+  }
+
   @media (max-width:560px){
     .signboard{ padding:16px 18px; }
     .signboard__title{ font-size:18px; }
@@ -344,6 +351,16 @@
     const el = document.createElement('article');
     el.className = `ticket ticket--${cat}` + (animate ? ' is-new' : '');
     el.dataset.category = cat;
+    const stageBits = [];
+    if (event.zone)                     stageBits.push(`<span class="ticket__stage">${event.zone}</span>`);
+    if (event.distance_m !== undefined && event.distance_m !== null) stageBits.push(`<span>${event.distance_m}m</span>`);
+    if (event.sound)                    stageBits.push(`<span>🔊 ${event.sound}</span>`);
+    if (event.vibration)                stageBits.push(`<span>📳 ${event.vibration}</span>`);
+    if (event.flash)                    stageBits.push(`<span>⚡ flash</span>`);
+    const stageRow = stageBits.length
+      ? `<div class="ticket__row2">${stageBits.join('')}</div>`
+      : '';
+
     el.innerHTML = `
       <div class="ticket__bar"></div>
       <div class="ticket__body">
@@ -358,6 +375,7 @@
           <span class="ticket__duration">${event.duration_ms}ms</span>
           <span class="ticket__client">${event.client || ''}</span>
         </div>
+        ${stageRow}
       </div>
     `;
     if (currentFilter !== 'all' && cat !== currentFilter) el.style.display = 'none';
