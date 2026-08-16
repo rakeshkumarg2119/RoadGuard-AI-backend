@@ -46,8 +46,8 @@ The **Road Guard AI Backend** powers the logic behind the app. It processes user
 
 1. **Clone the repository:**
    ```bash
-   git clone <your-repo-url>
-   cd backend
+   git clone https://github.com/rakeshkumarg2119/RoadGuard-AI-backend.git
+   cd RoadGuard-AI-backend
    ```
 
 2. **Create and activate a virtual environment:**
