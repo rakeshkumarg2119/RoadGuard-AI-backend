@@ -4,13 +4,14 @@ RoadGuard AI — /simulate/step route
 Stateless demo endpoint. Flutter passes pothole_id + step index + condition.
 Backend computes that step's GPS position, speed, distance, and alert.
 
-Steps (6 total):
-  0: 80m, 10 km/h  → approaching, no alert
-  1: 65m, 20 km/h  → closing in, no alert
-  2: 50m, 30 km/h  → low alert zone
-  3: 35m, 40 km/h  → medium alert
-  4: 22m, 40 km/h  → HIGH alert
-  5: 12m, 40 km/h  → CRITICAL
+Steps (7 total, ~70 sec at 10s/step — matches the Flutter demo timeline):
+  0: 90m,  0 km/h  → start, no alert
+  1: 70m, 12 km/h  → accelerating, no alert
+  2: 55m, 25 km/h  → ramping up, low alert
+  3: 40m, 40 km/h  → peak speed (mid-route), medium alert
+  4: 28m, 28 km/h  → braking begins, medium alert
+  5: 16m, 15 km/h  → HIGH alert
+  6:  6m,  5 km/h  → CRITICAL, near-stop, siren (closest approach)
 
 condition: "dry" | "rain"
 """
@@ -34,16 +35,40 @@ logger = logging.getLogger("roadguard.routes.simulate")
 engine = PotholePhysicsEngine()
 
 # ── Step table: (distance_m, speed_kmh) ──────────────────────────────────────
+# Speed ramps up then brakes down toward the hazard — mimics a real
+# rider accelerating, cruising, then braking as the pothole gets close.
 STEPS = [
-    (80.0, 10.0),
-    (65.0, 20.0),
-    (50.0, 30.0),
-    (35.0, 40.0),
-    (22.0, 40.0),
-    (12.0, 40.0),
+    (90.0, 0.0),
+    (70.0, 12.0),
+    (55.0, 25.0),
+    (40.0, 40.0),
+    (28.0, 28.0),
+    (16.0, 15.0),
+    (6.0, 5.0),
 ]
 
 TOTAL_STEPS = len(STEPS)
+
+# The peak speed baked into STEPS above (step 3 = 40 km/h). User-selected
+# speed_kmh is scaled relative to this so the whole curve (accelerate ->
+# peak -> brake) stretches/shrinks proportionally instead of being ignored.
+PEAK_SPEED_IN_TABLE = 40.0
+
+# Severity is forced by step index rather than derived from the physics
+# engine's d_alert_m threshold. The physics threshold scales with speed,
+# so a fast mid-route step (e.g. step 3 at 40 km/h) could otherwise fire
+# CRITICAL well before the rider is actually close — out of sync with
+# the Flutter app's stage1/stage2/stage3 curve. Forcing it by step keeps
+# backend severity and client alert stage locked together.
+SEVERITY_BY_STEP = {
+    0: None,
+    1: None,
+    2: "low",
+    3: "medium",
+    4: "medium",
+    5: "high",
+    6: "critical",
+}
 
 CONDITION_MAP = {
     "dry":  RoadCondition.DRY,
@@ -103,6 +128,10 @@ async def simulate_step(
     pothole_id: str = Query(..., description="MongoDB _id of the pothole"),
     step: int = Query(..., ge=0, lt=TOTAL_STEPS, description=f"Step index 0–{TOTAL_STEPS - 1}"),
     condition: str = Query("dry", description="Road condition: dry | rain"),
+    speed_kmh: float = Query(
+        PEAK_SPEED_IN_TABLE, gt=0,
+        description="User-selected peak speed (km/h) — scales the step curve",
+    ),
 ):
     """
     Returns physics + alert for one simulated approach step.
@@ -140,20 +169,28 @@ async def simulate_step(
     )
 
     # ── Step values ───────────────────────────────────────────────────────
-    distance_m, speed_kmh = STEPS[step]
+    # distance_m and the table's base speed stay tied to `step` (this is
+    # what keeps severity/alert-stage timing locked to the Flutter curve —
+    # see SEVERITY_BY_STEP note above). Only the speed value itself is
+    # scaled to reflect what the user actually picked.
+    distance_m, base_speed_kmh = STEPS[step]
+
+    scale = speed_kmh / PEAK_SPEED_IN_TABLE
+    speed_kmh_actual = round(base_speed_kmh * scale, 1)
 
     # ── Masked GPS: rider is distance_m north of pothole ─────────────────
     rider_lat, rider_lon = _offset_coords(pothole_lat, pothole_lon, distance_m)
 
-    # ── Physics ───────────────────────────────────────────────────────────
+    # ── Physics (kept for reference / display only — see note above) ─────
     result = engine.calculate(
-        speed_kmh=speed_kmh,
+        speed_kmh=speed_kmh_actual,
         pothole=pothole_geom,
         road_condition=road_condition,
     )
 
-    alert_fires = distance_m <= result.d_alert_m
-    severity    = result.severity if alert_fires else None
+    # ── Alert: forced by step index, not physics threshold ───────────────
+    severity    = SEVERITY_BY_STEP.get(step)
+    alert_fires = severity is not None
 
     # ── Response ──────────────────────────────────────────────────────────
     return {
@@ -174,10 +211,10 @@ async def simulate_step(
         },
 
         "distance_m":   distance_m,
-        "speed_kmh":    speed_kmh,
+        "speed_kmh":    speed_kmh_actual,
         "condition":    condition,
 
-        # Physics
+        # Physics (reference values only — not used to trigger alert_fires)
         "d_alert_m":    round(result.d_alert_m, 1),
         "d_stop_m":     round(result.d_stop_m, 1),
         "d_react_m":    round(result.d_react_m, 1),
@@ -201,10 +238,18 @@ async def simulate_step(
 
 
 @router.get("/simulate/info")
-async def simulate_info():
+async def simulate_info(
+    speed_kmh: float = Query(
+        PEAK_SPEED_IN_TABLE, gt=0,
+        description="User-selected peak speed (km/h) — scales the preview curve",
+    ),
+):
     """
     Returns the full step table so Flutter can preview the demo script.
+    Scaled by speed_kmh so the preview matches what /simulate/step will
+    actually return for that speed (see PEAK_SPEED_IN_TABLE note above).
     """
+    scale = speed_kmh / PEAK_SPEED_IN_TABLE
     return {
         "total_steps": TOTAL_STEPS,
         "conditions":  ["dry", "rain"],
@@ -212,7 +257,8 @@ async def simulate_info():
             {
                 "step":       i,
                 "distance_m": d,
-                "speed_kmh":  s,
+                "speed_kmh":  round(s * scale, 1),
+                "severity":   SEVERITY_BY_STEP.get(i),
             }
             for i, (d, s) in enumerate(STEPS)
         ],

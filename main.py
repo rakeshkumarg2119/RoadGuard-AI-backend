@@ -113,6 +113,38 @@ async def live_feed_middleware(request: Request, call_next):
                 media_type=response.media_type,
             )
 
+        elif key == "simulate" and request.method == "GET":
+            body_chunks = [chunk async for chunk in response.body_iterator]
+            raw_body = b"".join(body_chunks)
+
+            try:
+                body_json = json.loads(raw_body)
+                # /simulate/info has no distance_m/speed_kmh — skip it,
+                # only decorate the per-step /simulate/step calls.
+                if "speed_kmh" in body_json:
+                    step = body_json.get("step")
+                    total = body_json.get("total_steps")
+                    severity = body_json.get("severity")
+
+                    extra = {
+                        "zone":        severity.upper() if severity else f"STEP {step + 1}/{total}",
+                        "distance_m":  body_json.get("distance_m"),
+                        "speed_kmh":   body_json.get("speed_kmh"),
+                        "condition":   body_json.get("condition"),
+                        "sound":       body_json.get("sound"),
+                        "vibration":   body_json.get("vibration"),
+                    }
+            except Exception:
+                pass
+
+            from starlette.responses import Response as StarletteResponse
+            response = StarletteResponse(
+                content=raw_body,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.media_type,
+            )
+
         await live_feed.record({
             "id":             str(uuid.uuid4()),
             "time":           datetime.now(timezone.utc).isoformat(),

@@ -354,6 +354,8 @@
     const stageBits = [];
     if (event.zone)                     stageBits.push(`<span class="ticket__stage">${event.zone}</span>`);
     if (event.distance_m !== undefined && event.distance_m !== null) stageBits.push(`<span>${event.distance_m}m</span>`);
+    if (event.speed_kmh !== undefined && event.speed_kmh !== null)   stageBits.push(`<span>🏍️ ${event.speed_kmh} km/h</span>`);
+    if (event.condition)                stageBits.push(`<span>${event.condition === 'rain' ? '🌧️ rain' : '☀️ dry'}</span>`);
     if (event.sound)                    stageBits.push(`<span>🔊 ${event.sound}</span>`);
     if (event.vibration)                stageBits.push(`<span>📳 ${event.vibration}</span>`);
     if (event.flash)                    stageBits.push(`<span>⚡ flash</span>`);
