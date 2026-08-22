@@ -16,6 +16,7 @@ load_dotenv()
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from core.app_state import connect_all, disconnect_all
 from core.live_feed import live_feed
@@ -26,6 +27,8 @@ from routes.simulate import router as simulate_router
 from routes.reports import router as reports_router              # ← NEW
 
 DASHBOARD_PATH = Path(__file__).parent / "core" / "dashboard.html"
+STATIC_DIR = Path(__file__).parent / "static"
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
 # path fragment -> (stats key, label shown on the ticket)
 CATEGORY_MAP = (
@@ -75,6 +78,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serves annotated pothole images written by routes/upload.py
+# (e.g. GET /static/annotated/<uuid>.jpg)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.middleware("http")
