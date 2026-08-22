@@ -193,6 +193,14 @@ async def test_simulation_store_save_and_lookup():
 
     # Async generator for cursor iteration
     async def async_generator(items):
+        """Yield each item from the provided iterable in order.
+        
+        Parameters:
+            items: The iterable whose items are yielded.
+        
+        Yields:
+            Each item from `items`.
+        """
         for item in items:
             yield item
 
