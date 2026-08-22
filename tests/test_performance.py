@@ -39,7 +39,18 @@ from core.pothole_detector import PotholeDetector
 # =========================================================
 
 def calculate_stats(latencies_ms: list[float], total_duration_sec: float) -> dict:
-    """Computes mean, p50, p95, p99 latencies (ms) and Requests Per Second (RPS)."""
+    """
+    Calculate latency statistics and throughput for a set of operations.
+    
+    Parameters:
+        latencies_ms (list[float]): Operation latencies in milliseconds.
+        total_duration_sec (float): Total measurement duration in seconds.
+    
+    Returns:
+        dict: Statistics containing the operation count, mean, p50, p95, and p99
+            latencies in milliseconds, and requests per second. All values are zero
+            when no latency samples are provided.
+    """
     if not latencies_ms:
         return {"count": 0, "mean_ms": 0, "p50_ms": 0, "p95_ms": 0, "p99_ms": 0, "rps": 0}
 
@@ -83,7 +94,15 @@ def print_stats(name: str, stats: dict):
 # =========================================================
 
 def benchmark_physics_engine(iterations: int = 5000) -> dict:
-    """Benchmark PotholePhysicsEngine calculation performance."""
+    """
+    Benchmark pothole physics calculation performance over a configurable number of iterations.
+    
+    Parameters:
+    	iterations (int): Number of physics calculations to measure.
+    
+    Returns:
+    	dict: Performance statistics for the recorded calculations.
+    """
     engine = PotholePhysicsEngine()
     pothole = PotholeGeometry(width_m=0.45, depth_m=0.08)
 
@@ -107,7 +126,15 @@ def benchmark_physics_engine(iterations: int = 5000) -> dict:
 # =========================================================
 
 def benchmark_detector_and_calibration(iterations: int = 50) -> dict:
-    """Benchmark YOLO PotholeDetector and Camera Calibration inference."""
+    """
+    Benchmark pothole detector frame processing and camera calibration inference.
+    
+    Parameters:
+    	iterations (int): Number of synthetic frames to process.
+    
+    Returns:
+    	dict: Benchmark statistics for frame-processing latency and throughput.
+    """
     detector = PotholeDetector(min_confidence=0.10)
     frame = np.full((720, 1280, 3), fill_value=80, dtype=np.uint8)
     frame[500:600, 500:700] = 20
@@ -131,7 +158,16 @@ def benchmark_detector_and_calibration(iterations: int = 50) -> dict:
 # =========================================================
 
 async def benchmark_api_endpoints(concurrency: int = 20, total_requests: int = 200) -> dict:
-    """Benchmark API endpoints under concurrent load using httpx AsyncClient."""
+    """
+    Benchmark FastAPI endpoint latency under concurrent load.
+    
+    Parameters:
+    	concurrency (int): Maximum number of simultaneous requests.
+    	total_requests (int): Total number of requests distributed across the benchmark endpoints.
+    
+    Returns:
+    	dict: Operation count, latency percentiles, mean latency, and throughput statistics.
+    """
 
     # Mock DB/Store dependencies for API benchmarking
     mock_col = AsyncMock()
@@ -143,6 +179,12 @@ async def benchmark_api_endpoints(concurrency: int = 20, total_requests: int = 2
     }
 
     async def async_gen(items):
+        """
+        Yield each item from the provided iterable in sequence.
+        
+        Yields:
+            The next item from `items`.
+        """
         for item in items:
             yield item
 
@@ -190,6 +232,7 @@ async def benchmark_api_endpoints(concurrency: int = 20, total_requests: int = 2
             latencies = []
 
             async def worker(url: str):
+                """Fetches an endpoint and records its successful response latency."""
                 async with semaphore:
                     t0 = time.perf_counter()
                     resp = await client.get(url)
